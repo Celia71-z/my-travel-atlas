@@ -37,9 +37,54 @@ interface SearchResult {
   };
 }
 
+type NominatimSearchFeature = {
+  properties?: {
+    name?: string;
+    display_name?: string;
+  };
+  geometry?: {
+    coordinates?: number[];
+  };
+};
+
+type NominatimSearchResponse = {
+  features?: NominatimSearchFeature[];
+};
+
 interface ThirdStepProps extends StepProps {
   onAddressUpdate?: (addressData: AddressData | null) => void;
 }
+
+const toSearchResults = (
+  data: NominatimSearchResponse,
+  fallbackName: string
+): SearchResult[] => {
+  return (data.features ?? []).flatMap((feature) => {
+    const coordinates = feature.geometry?.coordinates;
+    const lng = coordinates?.[0];
+    const lat = coordinates?.[1];
+
+    if (typeof lng !== "number" || typeof lat !== "number") {
+      return [];
+    }
+
+    const displayName =
+      feature.properties?.display_name ?? feature.properties?.name ?? fallbackName;
+    const name = feature.properties?.name ?? displayName.split(",")[0] ?? fallbackName;
+
+    return [
+      {
+        properties: {
+          name,
+          place_formatted: displayName,
+        },
+        geometry: {
+          coordinates: [lng, lat],
+        },
+      },
+    ];
+  });
+};
 
 export function ThirdStep({
   onNext,
@@ -94,22 +139,26 @@ export function ThirdStep({
 
   // Search for places
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+    const query = searchQuery.trim();
+    if (!query) return;
 
     setIsSearching(true);
     try {
-      const response = await fetch(
-        `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(
-          searchQuery
-        )}&access_token=${process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}&limit=10`
-      );
+      const url = new URL("https://nominatim.openstreetmap.org/search");
+      url.searchParams.set("format", "geojson");
+      url.searchParams.set("q", query);
+      url.searchParams.set("addressdetails", "1");
+      url.searchParams.set("limit", "10");
+      url.searchParams.set("accept-language", "en");
+
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error("Search failed");
       }
 
-      const data = await response.json();
-      setSearchResults(data.features || []);
+      const data: NominatimSearchResponse = await response.json();
+      setSearchResults(toSearchResults(data, query));
     } catch (error) {
       console.error("Search error:", error);
       setSearchResults([]);
@@ -275,7 +324,7 @@ export function ThirdStep({
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
           <Button type="submit" disabled={isSubmitting || !isValid}>
-            Next <ArrowRight className="ml-2 h-4 w-4" />
+            Next <ArrowRight className="ml-2 h-4" />
           </Button>
         </div>
       </form>
