@@ -128,21 +128,34 @@ export default function MultiStepForm({
         width: imageInfo?.width || 0,
         height: imageInfo?.height || 0,
         blurData: imageInfo?.blurhash || "",
-        // Add address data from geocoding if available
-        country: address?.features?.[0]?.properties?.context?.country?.name,
+        // Add City Footprint data generated in the location step.
+        country:
+          updatedData.country ??
+          address?.features?.[0]?.properties?.context?.country?.name,
         countryCode:
+          updatedData.countryCode ??
           address?.features?.[0]?.properties?.context?.country?.country_code,
-        region: address?.features?.[0]?.properties?.context?.region?.name,
+        region:
+          updatedData.city ??
+          address?.features?.[0]?.properties?.context?.region?.name,
         city:
-          address?.features?.[0]?.properties?.context?.country?.country_code ===
-            "JP" ||
-          address?.features?.[0]?.properties?.context?.country?.country_code ===
-            "TW"
+          updatedData.city ??
+          (address?.features?.[0]?.properties?.context?.country
+            ?.country_code === "JP" ||
+          address?.features?.[0]?.properties?.context?.country
+            ?.country_code === "TW"
             ? address?.features?.[0]?.properties?.context?.region?.name
-            : address?.features?.[0]?.properties?.context?.place?.name,
+            : address?.features?.[0]?.properties?.context?.place?.name),
         district: address?.features?.[0]?.properties?.context?.locality?.name,
-        fullAddress: address?.features?.[0]?.properties?.full_address,
-        placeFormatted: address?.features?.[0]?.properties?.place_formatted,
+        latitude: updatedData.latitude,
+        longitude: updatedData.longitude,
+        fullAddress:
+          updatedData.fullAddress ??
+          address?.features?.[0]?.properties?.full_address,
+        placeFormatted:
+          updatedData.place ??
+          updatedData.fullAddress ??
+          address?.features?.[0]?.properties?.place_formatted,
       };
 
       setIsSubmitting(true);
