@@ -29,8 +29,15 @@ const ProfileCard = () => {
             </div>
           </div>
 
-          <div className="lg:mt-4 xl:mt-0">
-            <p className="text-text-muted text-[15px]">{siteConfig.bio}</p>
+          <div className="lg:mt-4 xl:mt-0 space-y-4">
+            <p className="text-text-muted text-[15px]">
+              My Travel Atlas 是一个个人旅行地图档案，用来记录走过的足迹、探索过的国家和城市，以及旅途中收藏的照片、视频和故事。
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs text-text-muted">
+              <span className="rounded-full bg-background px-3 py-1">旅行足迹</span>
+              <span className="rounded-full bg-background px-3 py-1">国家和城市探索</span>
+              <span className="rounded-full bg-background px-3 py-1">照片、视频和故事</span>
+            </div>
           </div>
 
           <div className="absolute top-8 right-8 opacity-0 group-hover:top-6 group-hover:right-6 group-hover:opacity-100 transition-all duration-300 ease-in-out">
