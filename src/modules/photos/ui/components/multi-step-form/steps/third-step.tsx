@@ -324,7 +324,7 @@ export function ThirdStep({
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
           <Button type="submit" disabled={isSubmitting || !isValid}>
-            Next <ArrowRight className="ml-2 h-4" />
+            Next <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
       </form>
