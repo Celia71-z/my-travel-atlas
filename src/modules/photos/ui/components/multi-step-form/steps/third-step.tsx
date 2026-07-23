@@ -305,6 +305,7 @@ export function ThirdStep({
           <FormControl>
             <div className="h-[400px] w-full rounded-md border overflow-hidden">
               <MapComponent
+                key={`${mapValues.viewState.longitude}-${mapValues.viewState.latitude}`}
                 markers={mapValues.markers}
                 initialViewState={mapValues.viewState}
               />
