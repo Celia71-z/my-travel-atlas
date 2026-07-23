@@ -75,7 +75,7 @@ export const DashboardSidebar = async ({
             >
               <Link href="/">
                 <IconLivePhoto />
-                <span className="text-base font-semibold">Photography</span>
+                <span className="text-base font-semibold">My Travel Atlas</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
