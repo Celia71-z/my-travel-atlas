@@ -13,7 +13,7 @@ import type { PhotoPoint } from "@/modules/discover/lib/clustering";
 import { FramedPhoto } from "@/components/framed-photo";
 import { format } from "date-fns/format";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { MapRef } from "react-map-gl/mapbox";
+import type { MapRef } from "react-map-gl/maplibre";
 import {
   Drawer,
   DrawerContent,
