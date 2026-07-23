@@ -1,330 +1,329 @@
 import dynamic from "next/dynamic";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowLeft, X, MapPin } from "lucide-react";
-import { Form, FormControl, FormItem, FormLabel } from "@/components/ui/form";
+import { ArrowRight, ArrowLeft, LocateFixed, MapPin } from "lucide-react";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { thirdStepSchema, StepProps, ThirdStepData } from "../types";
-import type { AddressData } from "@/modules/mapbox/hooks/use-get-address";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatGPSCoordinates } from "@/lib/utils";
-import { useGetAddress } from "@/modules/mapbox/hooks/use-get-address";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { useTRPC } from "@/trpc/client";
+import type { GeocodingResult } from "@/modules/geocoding/types";
 
-const MapboxComponent = dynamic(
-  () => import("@/modules/mapbox/ui/components/map"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="size-full flex items-center justify-center bg-muted">
-        <Skeleton className="h-full w-full" />
-      </div>
-    ),
-  }
-);
-
-interface SearchResult {
-  properties: {
-    name: string;
-    place_formatted: string;
-  };
-  geometry: {
-    coordinates: [number, number];
-  };
-}
-
-type NominatimSearchFeature = {
-  properties?: {
-    name?: string;
-    display_name?: string;
-  };
-  geometry?: {
-    coordinates?: number[];
-  };
-};
-
-type NominatimSearchResponse = {
-  features?: NominatimSearchFeature[];
-};
+const MapComponent = dynamic(() => import("@/modules/mapbox/ui/components/map"), {
+  ssr: false,
+  loading: () => (
+    <div className="size-full flex items-center justify-center bg-muted">
+      <Skeleton className="h-full w-full" />
+    </div>
+  ),
+});
 
 interface ThirdStepProps extends StepProps {
-  onAddressUpdate?: (addressData: AddressData | null) => void;
+  onAddressUpdate?: (addressData: unknown | null) => void;
 }
 
-const toSearchResults = (
-  data: NominatimSearchResponse,
-  fallbackName: string
-): SearchResult[] => {
-  return (data.features ?? []).flatMap((feature) => {
-    const coordinates = feature.geometry?.coordinates;
-    const lng = coordinates?.[0];
-    const lat = coordinates?.[1];
-
-    if (typeof lng !== "number" || typeof lat !== "number") {
-      return [];
-    }
-
-    const displayName =
-      feature.properties?.display_name ?? feature.properties?.name ?? fallbackName;
-    const name = feature.properties?.name ?? displayName.split(",")[0] ?? fallbackName;
-
-    return [
-      {
-        properties: {
-          name,
-          place_formatted: displayName,
-        },
-        geometry: {
-          coordinates: [lng, lat],
-        },
-      },
-    ];
-  });
-};
+const hasCoordinates = (value: Partial<ThirdStepData>) =>
+  typeof value.latitude === "number" && typeof value.longitude === "number";
 
 export function ThirdStep({
   onNext,
   onBack,
   initialData,
   isSubmitting,
-  onAddressUpdate,
 }: ThirdStepProps) {
-  // Get initial coordinates from EXIF data or form data
-  const initialLongitude = initialData?.longitude ?? 0;
-  const initialLatitude = initialData?.latitude ?? 0;
-
-  // Manage current location state
-  const [currentLocation, setCurrentLocation] = useState<{
-    lat: number;
-    lng: number;
-  }>({
-    lat: initialLatitude || 0,
-    lng: initialLongitude || 0,
-  });
-
-  // Search state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const [generatedLocation, setGeneratedLocation] =
+    useState<GeocodingResult | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const form = useForm<ThirdStepData>({
     resolver: zodResolver(thirdStepSchema),
     defaultValues: {
-      latitude: initialData?.latitude ?? 0,
-      longitude: initialData?.longitude ?? 0,
-      ...initialData,
+      country: initialData?.country ?? "",
+      city: initialData?.city ?? "",
+      place: initialData?.place ?? "",
+      latitude: initialData?.latitude,
+      longitude: initialData?.longitude,
+      fullAddress: initialData?.fullAddress ?? "",
+      countryCode: initialData?.countryCode ?? "",
     },
     mode: "onChange",
   });
 
   const { handleSubmit, formState } = form;
   const { isValid } = formState;
+  const watchedValues = form.watch();
 
-  // Get address from coordinates using the hook
-  const { data: addressData } = useGetAddress({
-    lat: currentLocation.lat,
-    lng: currentLocation.lng,
-  });
+  const clearGeneratedLocation = () => {
+    setGeneratedLocation(null);
+    form.setValue("latitude", undefined, { shouldDirty: true });
+    form.setValue("longitude", undefined, { shouldDirty: true });
+    form.setValue("fullAddress", "", { shouldDirty: true });
+    form.setValue("countryCode", "", { shouldDirty: true });
+  };
 
-  // Update parent component when address data changes
-  useEffect(() => {
-    if (addressData && onAddressUpdate) {
-      onAddressUpdate(addressData);
-    }
-  }, [addressData, onAddressUpdate]);
+  const handleGenerateCoordinates = async () => {
+    const isLocationInputValid = await form.trigger(["country", "city", "place"]);
 
-  // Search for places
-  const handleSearch = useCallback(async () => {
-    const query = searchQuery.trim();
-    if (!query) return;
-
-    setIsSearching(true);
-    try {
-      const url = new URL("https://nominatim.openstreetmap.org/search");
-      url.searchParams.set("format", "geojson");
-      url.searchParams.set("q", query);
-      url.searchParams.set("addressdetails", "1");
-      url.searchParams.set("limit", "10");
-      url.searchParams.set("accept-language", "en");
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error("Search failed");
-      }
-
-      const data: NominatimSearchResponse = await response.json();
-      setSearchResults(toSearchResults(data, query));
-    } catch (error) {
-      console.error("Search error:", error);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  }, [searchQuery]);
-
-  // Auto-search when query changes (with debounce)
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
+    if (!isLocationInputValid) {
       return;
     }
 
-    const debounceTimer = setTimeout(() => {
-      handleSearch();
-    }, 500); // 500ms delay
+    const values = form.getValues();
+    setIsGenerating(true);
 
-    return () => clearTimeout(debounceTimer);
-  }, [searchQuery, handleSearch]);
+    try {
+      const response = await queryClient.fetchQuery(
+        trpc.geocoding.search.queryOptions({
+          country: values.country,
+          city: values.city,
+          place: values.place?.trim() || undefined,
+          limit: 5,
+        })
+      );
 
-  // Handle selecting a search result
-  const handleSelectLocation = (result: SearchResult) => {
-    const [lng, lat] = result.geometry.coordinates;
-    setCurrentLocation({ lat, lng });
+      const location = response.result;
+      const selectedPlace = values.place?.trim() ? location.place : undefined;
+
+      setGeneratedLocation(location);
+      form.setValue("country", location.country, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("city", location.city, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("place", selectedPlace ?? "", { shouldDirty: true });
+      form.setValue("latitude", location.latitude, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("longitude", location.longitude, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue("fullAddress", location.fullAddress, {
+        shouldDirty: true,
+      });
+      form.setValue("countryCode", location.countryCode ?? "", {
+        shouldDirty: true,
+      });
+
+      toast.success("Coordinates generated");
+    } catch (error) {
+      console.error("Generate coordinates error:", error);
+      setGeneratedLocation(null);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to generate coordinates"
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  const handleClearSearch = () => {
-    setSearchQuery("");
-    setSearchResults([]);
-  };
+  const previewLocation = useMemo(() => {
+    if (generatedLocation) {
+      return generatedLocation;
+    }
 
-  // Memoize map values to reduce re-renders
+    if (hasCoordinates(initialData ?? {})) {
+      return {
+        id: "initial-location",
+        latitude: initialData!.latitude!,
+        longitude: initialData!.longitude!,
+        fullAddress: initialData?.fullAddress || "Existing photo GPS location",
+        country: initialData?.country || "",
+        city: initialData?.city || "",
+        source: "nominatim" as const,
+      };
+    }
+
+    return null;
+  }, [generatedLocation, initialData]);
+
   const mapValues = useMemo(() => {
-    const longitude = currentLocation.lng || initialLongitude;
-    const latitude = currentLocation.lat || initialLatitude;
-
     return {
-      markers:
-        longitude === 0 && latitude === 0
-          ? []
-          : [
-              {
-                id: "location",
-                longitude,
-                latitude,
-              },
-            ],
+      markers: previewLocation
+        ? [
+            {
+              id: "location",
+              longitude: previewLocation.longitude,
+              latitude: previewLocation.latitude,
+            },
+          ]
+        : [],
       viewState: {
-        longitude: longitude || -122.4, // Default to San Francisco
-        latitude: latitude || 37.8,
-        zoom: longitude === 0 && latitude === 0 ? 2 : 10,
+        longitude: previewLocation?.longitude ?? 104.1954,
+        latitude: previewLocation?.latitude ?? 35.8617,
+        zoom: previewLocation ? 10 : 2,
       },
     };
-  }, [
-    currentLocation.lat,
-    currentLocation.lng,
-    initialLatitude,
-    initialLongitude,
-  ]);
+  }, [previewLocation]);
 
   const onSubmit = (data: ThirdStepData) => {
-    // Include current location in submitted data
+    if (!generatedLocation) {
+      toast.error("Generate coordinates before continuing");
+      return;
+    }
+
     onNext({
       ...data,
-      latitude: currentLocation.lat || initialLatitude,
-      longitude: currentLocation.lng || initialLongitude,
+      country: data.country,
+      city: data.city,
+      place: data.place?.trim() || undefined,
+      latitude: generatedLocation.latitude,
+      longitude: generatedLocation.longitude,
+      fullAddress: generatedLocation.fullAddress,
+      countryCode: generatedLocation.countryCode,
     });
   };
 
   return (
     <Form {...form}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <FormItem>
-          <FormLabel>Search for a place</FormLabel>
-          {/* Search Input */}
-          <div className="relative mb-2">
-            <ButtonGroup>
-              <Input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <Button
-                variant="outline"
-                aria-label="Search"
-                onClick={handleClearSearch}
-                disabled={!searchQuery || isSearching}
-              >
-                <X />
-              </Button>
-            </ButtonGroup>
-
-            {/* Search Results */}
-            {searchResults.length > 0 && (
-              <Card className="absolute z-10 w-full mt-1 p-0 shadow-lg">
-                <ScrollArea className="h-[200px]">
-                  <div className="p-0">
-                    {searchResults.map((result, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="w-full text-left px-4 py-2 hover:bg-accent transition-colors flex items-start gap-2 border-b last:border-b-0"
-                        onClick={() => handleSelectLocation(result)}
-                      >
-                        <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">
-                            {result.properties.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {result.properties.place_formatted}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="country"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Country</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder="China"
+                    onChange={(event) => {
+                      field.onChange(event);
+                      clearGeneratedLocation();
+                    }}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
-          </div>
+          />
 
+          <FormField
+            control={form.control}
+            name="city"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>City</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder="Xiamen"
+                    onChange={(event) => {
+                      field.onChange(event);
+                      clearGeneratedLocation();
+                    }}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="place"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Specific place</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  placeholder="Optional, e.g. Gulangyu"
+                  onChange={(event) => {
+                    field.onChange(event);
+                    clearGeneratedLocation();
+                  }}
+                />
+              </FormControl>
+              <FormDescription>
+                Leave this blank if you only want to mark the city footprint.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleGenerateCoordinates}
+          disabled={
+            isGenerating ||
+            !watchedValues.country?.trim() ||
+            !watchedValues.city?.trim()
+          }
+          className="w-full"
+        >
+          <LocateFixed className="mr-2 h-4 w-4" />
+          {isGenerating ? "Generating coordinates..." : "Generate coordinates"}
+        </Button>
+
+        {generatedLocation && (
+          <Card className="p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+              <div className="space-y-1 min-w-0">
+                <p className="text-sm font-medium">Matched address</p>
+                <p className="text-xs text-muted-foreground">
+                  {generatedLocation.fullAddress}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatGPSCoordinates(
+                    generatedLocation.latitude,
+                    generatedLocation.longitude
+                  )}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        <FormItem>
+          <FormLabel>Map preview</FormLabel>
           <FormControl>
             <div className="h-[400px] w-full rounded-md border overflow-hidden">
-              <MapboxComponent
-                draggableMarker
+              <MapComponent
                 markers={mapValues.markers}
                 initialViewState={mapValues.viewState}
-                onMarkerDragEnd={(markerId, lngLat) => {
-                  setCurrentLocation({
-                    lat: lngLat.lat,
-                    lng: lngLat.lng,
-                  });
-                }}
               />
             </div>
           </FormControl>
-
-          {/* Address Display */}
-          <div className="space-y-1 text-sm text-muted-foreground mt-2">
-            <div className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              <span className="text-xs">
-                {currentLocation.lat !== 0 && currentLocation.lng !== 0
-                  ? formatGPSCoordinates(
-                      currentLocation.lat,
-                      currentLocation.lng
-                    )
-                  : "Drag the marker to set location"}
-              </span>
-            </div>
-            {addressData?.features?.[0] && (
-              <div className="text-xs">
-                📍 {addressData.features[0].properties.place_formatted}
-              </div>
-            )}
-          </div>
+          <FormDescription>
+            The marker appears after coordinates are generated.
+          </FormDescription>
         </FormItem>
 
         <div className="flex justify-between pt-4">
           <Button type="button" variant="outline" onClick={onBack}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
-          <Button type="submit" disabled={isSubmitting || !isValid}>
-            Next <ArrowRight className="ml-2 h-4 w-4" />
+          <Button
+            type="submit"
+            disabled={isSubmitting || !isValid || !generatedLocation}
+          >
+            Confirm Location <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
       </form>
