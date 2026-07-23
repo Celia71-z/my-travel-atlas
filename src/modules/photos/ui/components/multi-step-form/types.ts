@@ -37,8 +37,21 @@ export const secondStepSchema = z.object({
 export type SecondStepData = z.infer<typeof secondStepSchema>;
 
 export const thirdStepSchema = z.object({
+  country: z
+    .string()
+    .trim()
+    .min(1, { message: "Country is required" })
+    .max(100),
+  city: z
+    .string()
+    .trim()
+    .min(1, { message: "City is required" })
+    .max(100),
+  place: z.string().trim().max(180).optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  fullAddress: z.string().optional(),
+  countryCode: z.string().optional(),
 });
 
 export type ThirdStepData = z.infer<typeof thirdStepSchema>;
@@ -111,8 +124,8 @@ export const STEP_CONFIG = [
   },
   {
     id: "location",
-    title: "Location",
-    description: "Add location to your photo",
+    title: "City Footprint",
+    description: "Add the country and city for this memory",
   },
   {
     id: "preview",
