@@ -75,13 +75,12 @@ export const siteConfig = {
   },
 
   /**
-   * Mapbox custom style URLs (optional).
-   * If not set, Mapbox default styles will be used.
-   * Create your own at https://studio.mapbox.com/
+   * Map style URLs.
+   * These OpenFreeMap styles work with MapLibre without a Mapbox token.
    */
   mapbox: {
-    lightStyle: "mapbox://styles/ecarry/cldmhu6tr000001n33ujbxf7j",
-    darkStyle: "mapbox://styles/ecarry/clp8hcmd300km01qx78rt0xaw",
+    lightStyle: "https://tiles.openfreemap.org/styles/liberty",
+    darkStyle: "https://tiles.openfreemap.org/styles/liberty",
   },
 
   /**
