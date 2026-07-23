@@ -1,26 +1,21 @@
 "use client";
 
 // External dependencies
-import * as mapboxgl from "mapbox-gl";
-import { useCallback, useEffect, useRef, forwardRef } from "react";
+import { useCallback, useRef, forwardRef } from "react";
 import Map, {
   GeolocateControl,
   Layer,
-  LayerProps,
-  MapRef,
   Marker,
   NavigationControl,
   Source,
-} from "react-map-gl/mapbox";
+  type LayerProps,
+  type MapRef,
+} from "react-map-gl/maplibre";
 // Hooks & Types
-import MapboxGeocoder, {
-  type GeocoderOptions,
-} from "@mapbox/mapbox-gl-geocoder";
 import { useTheme } from "next-themes";
 import { siteConfig } from "@/site.config";
 // Styles
-import "mapbox-gl/dist/mapbox-gl.css";
-import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 export interface MapboxProps {
   id?: string;
@@ -58,6 +53,10 @@ export interface MapboxProps {
   dragPan?: boolean;
 }
 
+type MapClickEvent = {
+  features?: GeoJSON.Feature[];
+};
+
 const MAP_STYLES = {
   light: siteConfig.mapbox.lightStyle,
   dark: siteConfig.mapbox.darkStyle,
@@ -79,7 +78,6 @@ const Mapbox = forwardRef<MapRef, MapboxProps>(
       onMapClick,
       onMove,
       draggableMarker = false,
-      showGeocoder = false,
       showControls = true,
       scrollZoom = true,
       doubleClickZoom = true,
@@ -143,36 +141,12 @@ const Mapbox = forwardRef<MapRef, MapboxProps>(
       },
     };
 
-    // Add Geocoder control
-    useEffect(() => {
-      if (!showGeocoder || !mapRef.current) return;
-
-      const map = mapRef.current;
-      const geocoderOptions: GeocoderOptions = {
-        accessToken: process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN!,
-        mapboxgl: mapboxgl,
-      };
-      const geocoder = new MapboxGeocoder(geocoderOptions);
-
-      map.getMap().addControl(geocoder);
-
-      return () => {
-        if (map) {
-          map.getMap().removeControl(geocoder);
-        }
-      };
-    }, [showGeocoder]);
-
     // Handle GeoJSON click
     const onClick = useCallback(
-      (
-        event: mapboxgl.MapMouseEvent & {
-          features?: mapboxgl.GeoJSONFeature[];
-        },
-      ) => {
+      (event: MapClickEvent) => {
         const feature = event.features?.[0];
         if (feature && onGeoJsonClick) {
-          onGeoJsonClick(feature as GeoJSON.Feature);
+          onGeoJsonClick(feature);
           return;
         }
 
@@ -201,7 +175,6 @@ const Mapbox = forwardRef<MapRef, MapboxProps>(
         boxZoom={boxZoom}
         dragRotate={dragRotate}
         dragPan={dragPan}
-        mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}
         initialViewState={initialViewState}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLES[theme === "dark" ? "dark" : "light"]}
